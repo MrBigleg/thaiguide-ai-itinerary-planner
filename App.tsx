@@ -1,4 +1,5 @@
-import React, { useState } from 'react';
+
+import React, { useState, useEffect } from 'react';
 import { AppMode, ItineraryResponse } from './types';
 import { generateGroundedItinerary, analyzeComplexLogistics } from './services/geminiService';
 import LiveSession from './components/LiveSession';
@@ -18,46 +19,72 @@ export default function App() {
   const [itinerary, setItinerary] = useState<ItineraryResponse | null>(null);
   const [useComplexThinking, setUseComplexThinking] = useState(false);
   
+  // Auto-generation state from Live
+  const [liveTranscript, setLiveTranscript] = useState<string | null>(null);
+  
   // Location
   const [userLocation, setUserLocation] = useState<GeolocationCoordinates | undefined>(undefined);
 
-  // Handlers
+  // Helper for generating itinerary
+  const generateItinerary = async (promptText: string) => {
+      setLoading(true);
+      setItinerary(null);
+      try {
+        if (useComplexThinking) {
+            const extendedPrompt = `${promptText} Provide a deeply analyzed logistical plan considering traffic, weather patterns, and cultural timing. Explain your reasoning.`;
+            const text = await analyzeComplexLogistics(extendedPrompt);
+            setItinerary({ text });
+        } else {
+            const extendedPrompt = `${promptText} Include specific restaurant names, attraction ticket prices, and open hours using Google Maps.`;
+            const result = await generateGroundedItinerary(extendedPrompt, userLocation);
+            setItinerary(result);
+        }
+      } catch (error) {
+        console.error(error);
+        alert("Failed to generate itinerary. Please try again.");
+      } finally {
+        setLoading(false);
+      }
+  };
+
   const handleGenerate = async () => {
-    setLoading(true);
-    setItinerary(null);
-    try {
       // Get location for grounding if available
-      if (navigator.geolocation) {
+      if (navigator.geolocation && !userLocation) {
          navigator.geolocation.getCurrentPosition(
              (pos) => setUserLocation(pos.coords), 
              () => console.log("Loc permission denied")
          );
       }
 
-      // Updated prompt to include attraction suggestions
       let prompt = `Plan a 1-day itinerary for a tourist in ${destination}. Also suggest a list of popular tourist attractions in ${destination} with brief descriptions and estimated time needed to visit.`;
       if (interests) prompt += ` Focus on these interests: ${interests}.`;
-
-      if (useComplexThinking) {
-        // Use gemini-3-pro-preview (Thinking)
-        prompt += ` Provide a deeply analyzed logistical plan considering traffic, weather patterns for today/tomorrow, and cultural timing. Explain your reasoning for the sequence of events.`;
-        const text = await analyzeComplexLogistics(prompt);
-        // Thinking model doesn't return grounding chunks in the same way, or at least the prompt specified using it for reasoning.
-        setItinerary({ text }); 
-      } else {
-        // Use gemini-2.5-flash (Maps)
-        prompt += ` Include specific restaurant names, attraction ticket prices, and open hours using Google Maps.`;
-        const result = await generateGroundedItinerary(prompt, userLocation);
-        setItinerary(result);
-      }
-
-    } catch (error) {
-      console.error(error);
-      alert("Failed to generate itinerary. Please check your connection.");
-    } finally {
-      setLoading(false);
-    }
+      
+      await generateItinerary(prompt);
   };
+
+  // Handle plan creation from Live Session
+  const handlePlanFromLive = (transcript: string) => {
+      setLiveTranscript(transcript);
+      setMode(AppMode.PLANNER);
+  };
+
+  // Effect to trigger generation when transcript arrives
+  useEffect(() => {
+    if (liveTranscript && mode === AppMode.PLANNER) {
+        // Trigger auto-generation with a tailored prompt
+        const prompt = `Based on the following conversation with a tour guide, extract the user's destination preference and interests, and create a detailed 1-day itinerary.
+        
+        CONVERSATION TRANSCRIPT:
+        ${liveTranscript}
+        
+        If the destination is unclear, suggest a plan for Bangkok.`;
+        
+        generateItinerary(prompt);
+        // Clear transcript so it doesn't re-trigger
+        setLiveTranscript(null);
+    }
+  }, [liveTranscript, mode]);
+
 
   return (
     <div className="min-h-screen bg-slate-50 flex flex-col md:flex-row">
@@ -108,7 +135,7 @@ export default function App() {
             <div className="max-w-4xl mx-auto space-y-8">
                 <header className="mb-8">
                     <h1 className="text-3xl font-bold text-slate-900 mb-2">Create Your Day Plan</h1>
-                    <p className="text-slate-500">Generate a custom itinerary and discover popular attractions grounded in real Google Maps data.</p>
+                    <p className="text-slate-500">Generate a custom itinerary grounded in real Google Maps data.</p>
                 </header>
 
                 <div className="bg-white p-6 rounded-xl shadow-sm border border-slate-200 grid grid-cols-1 md:grid-cols-2 gap-6">
@@ -187,9 +214,12 @@ export default function App() {
             <div className="max-w-md mx-auto h-full flex flex-col justify-center">
                 <header className="mb-8 text-center">
                     <h1 className="text-3xl font-bold text-slate-900 mb-2">Live Voice Guide</h1>
-                    <p className="text-slate-500">Have a real-time voice conversation with your AI companion.</p>
+                    <p className="text-slate-500">Have a real-time voice conversation with Somsri.</p>
                 </header>
-                <LiveSession onClose={() => setMode(AppMode.PLANNER)} />
+                <LiveSession 
+                    onClose={() => setMode(AppMode.PLANNER)} 
+                    onCreatePlan={handlePlanFromLive}
+                />
             </div>
         )}
 
