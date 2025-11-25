@@ -1,0 +1,8 @@
+{
+  "name": "ThaiGuide: AI Itinerary Planner",
+  "description": "Your intelligent companion for exploring Thailand. Features real-time maps, advanced route planning with deep reasoning, conversational live voice guide, and text-to-speech itineraries.",
+  "requestFramePermissions": [
+    "microphone",
+    "geolocation"
+  ]
+}
