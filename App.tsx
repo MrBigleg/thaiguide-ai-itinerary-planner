@@ -1,4 +1,3 @@
-
 import React, { useState, useEffect } from 'react';
 import { AppMode, ItineraryResponse } from './types';
 import { generateGroundedItinerary, analyzeComplexLogistics } from './services/geminiService';

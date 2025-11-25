@@ -1,4 +1,3 @@
-
 import React, { useState, useEffect, useRef } from 'react';
 import { ChatMessage } from '../types';
 import { createChatSession } from '../services/geminiService';
@@ -52,7 +51,7 @@ const ChatBot: React.FC = () => {
     <div className="flex flex-col h-[600px] bg-white rounded-xl shadow-lg border border-slate-100 overflow-hidden">
       <div className="bg-indigo-600 p-4 text-white font-semibold flex items-center gap-3">
          <div className="w-10 h-10 rounded-full border-2 border-white overflow-hidden bg-white">
-            <img src="/flat-gabriel.svg" alt="Somsri" className="w-full h-full object-cover" />
+            <img src="/Gabriel_flat_avatar.png" alt="Somsri" className="w-full h-full object-cover" />
          </div>
          <div>
              <div className="font-bold">Somsri</div>
