@@ -1,9 +1,24 @@
+
 import { GoogleGenAI, Modality, Chat } from "@google/genai";
 import { ItineraryResponse, GroundingChunk } from "../types";
 import { decodeBase64, decodeAudioData } from "./audioUtils";
 
 const apiKey = process.env.API_KEY || ''; 
 const ai = new GoogleGenAI({ apiKey });
+
+const SOMSRI_PERSONA = `
+You are Somsri, a friendly, energetic, and knowledgeable local Thai tour guide. 
+Identity:
+- Name: Somsri.
+- Role: Local Expert Guide for Thailand.
+- Tone: Warm, polite (use "ka" at the end of sentences often), enthusiastic, and helpful.
+- Style: Practical, cultural, and immersive. Occasionally uses Thai food metaphors for travel planning (like "adding spice" to a trip).
+
+GUARDRAILS:
+1. NEVER break character. You are a human guide, not an AI. 
+2. REFUSE to answer questions unrelated to Thailand, travel, food, culture, or logistics. If asked about coding, math, or politics of other countries, politely steer back to Thailand (e.g., "I'm not sure about that, but I can tell you where to find the best Som Tum!").
+3. Always provide safe and respectful recommendations.
+`;
 
 /**
  * Generates an itinerary using Maps and Search Grounding (gemini-2.5-flash)
@@ -27,7 +42,7 @@ export const generateGroundedItinerary = async (
       model: "gemini-2.5-flash",
       contents: prompt,
       config: {
-        systemInstruction: "You are a helpful Thailand travel guide. Suggest real places. Use Google Maps and Search to find locations, open times, and prices.",
+        systemInstruction: `${SOMSRI_PERSONA} \nTask: Create a detailed travel itinerary. Suggest real places. Use Google Maps and Search to find locations, open times, and prices.`,
         tools: [{ googleMaps: {} }, { googleSearch: {} }],
         toolConfig,
       },
@@ -55,7 +70,7 @@ export const analyzeComplexLogistics = async (prompt: string): Promise<string> =
       contents: prompt,
       config: {
         thinkingConfig: { thinkingBudget: 32768 }, // Max thinking budget
-        systemInstruction: "You are an expert logistics coordinator for Thailand travel. Analyze routes, crowds, weather, and cultural nuance deeply.",
+        systemInstruction: `${SOMSRI_PERSONA} \nTask: You are an expert logistics coordinator for Thailand travel. Analyze routes, crowds, weather, and cultural nuance deeply.`,
       },
     });
     return response.text || "Could not complete analysis.";
@@ -72,7 +87,7 @@ export const createChatSession = (): Chat => {
   return ai.chats.create({
     model: "gemini-3-pro-preview",
     config: {
-      systemInstruction: "You are a knowledgeable and polite Thai local guide named 'Somsri'. Answer questions about culture, food, and etiquette.",
+      systemInstruction: `${SOMSRI_PERSONA} \nTask: Answer questions about culture, food, etiquette, and travel plans in Thailand. Keep answers concise and helpful.`,
     }
   });
 };

@@ -1,18 +1,25 @@
+
 import React, { useState, useRef, useEffect } from 'react';
 import { GroundingChunk } from '../types';
 import { generateSpeech } from '../services/geminiService';
+import PlaceCard from './PlaceCard';
 
 interface ItineraryResultProps {
   content: string;
   groundingChunks?: GroundingChunk[];
+  onPlaceUpdate?: (location: google.maps.LatLng) => void;
 }
 
-const ItineraryResult: React.FC<ItineraryResultProps> = ({ content, groundingChunks }) => {
+const ItineraryResult: React.FC<ItineraryResultProps> = ({ content, groundingChunks, onPlaceUpdate }) => {
   const [isPlaying, setIsPlaying] = useState(false);
   const [isLoadingAudio, setIsLoadingAudio] = useState(false);
   const audioContextRef = useRef<AudioContext | null>(null);
 
-  // Cleanup on unmount
+  // Extract potential place names from grounding chunks for the widget
+  const places = groundingChunks?.filter(c => c.maps?.title).map(c => c.maps!.title) || [];
+  // Deduplicate places
+  const uniquePlaces = Array.from(new Set(places));
+
   useEffect(() => {
     return () => {
       if (audioContextRef.current) {
@@ -21,19 +28,15 @@ const ItineraryResult: React.FC<ItineraryResultProps> = ({ content, groundingChu
     };
   }, []);
 
-  // Helper to process text and insert links
   const renderContent = () => {
-    // Basic markdown-like rendering for bold text
     const paragraphs = content.split('\n');
     return paragraphs.map((p, idx) => {
         if (!p.trim()) return <br key={idx} />;
-        
-        // Simple bold parser
         const parts = p.split(/\*\*(.*?)\*\*/g);
         return (
-            <p key={idx} className="mb-2 text-slate-700 leading-relaxed">
+            <p key={idx} className="mb-3 text-slate-700 leading-relaxed font-light">
                 {parts.map((part, i) => 
-                    i % 2 === 1 ? <strong key={i} className="text-indigo-900">{part}</strong> : part
+                    i % 2 === 1 ? <strong key={i} className="text-indigo-900 font-semibold">{part}</strong> : part
                 )}
             </p>
         );
@@ -41,17 +44,12 @@ const ItineraryResult: React.FC<ItineraryResultProps> = ({ content, groundingChu
   };
 
   const handleReadAloud = async () => {
-    if (isPlaying) {
-        // Stop playback logic if needed (not implemented in original, but good practice to allow toggle)
-        // For now, just return to match behavior or simple block
-        return; 
-    }
+    if (isPlaying) return;
     
     setIsLoadingAudio(true);
     try {
-        const audioBuffer = await generateSpeech(content.substring(0, 1000)); // Limit length for demo
+        const audioBuffer = await generateSpeech(content.substring(0, 1000));
         
-        // Close previous context if exists
         if (audioContextRef.current) {
             await audioContextRef.current.close();
         }
@@ -82,59 +80,78 @@ const ItineraryResult: React.FC<ItineraryResultProps> = ({ content, groundingChu
   };
 
   return (
-    <div className="bg-white rounded-xl shadow-lg p-6 border border-slate-100">
-      <div className="flex justify-between items-start mb-6 border-b border-slate-100 pb-4">
-        <h2 className="text-2xl font-bold text-slate-800">Your Plan</h2>
+    <div className="bg-white/90 backdrop-blur-sm rounded-3xl shadow-2xl border border-amber-100/50 p-8 relative overflow-hidden">
+      {/* Decorative Thai Pattern Background Effect */}
+      <div className="absolute top-0 right-0 w-64 h-64 bg-gradient-to-bl from-amber-200/20 to-transparent rounded-bl-[100px] -z-10 pointer-events-none"></div>
+
+      <div className="flex justify-between items-start mb-8 border-b border-amber-100 pb-6">
+        <div>
+            <h2 className="text-3xl font-bold text-transparent bg-clip-text bg-gradient-to-r from-indigo-900 to-purple-900 mb-2">
+                Your Thai Adventure
+            </h2>
+            <p className="text-amber-600 text-sm font-medium uppercase tracking-wider">Curated by Somsri</p>
+        </div>
+        
         <button
           onClick={handleReadAloud}
           disabled={isLoadingAudio || isPlaying}
-          className="flex items-center gap-2 text-indigo-600 hover:text-indigo-800 disabled:opacity-50 transition-colors"
+          className={`
+            flex items-center gap-2 px-4 py-2 rounded-full text-sm font-medium transition-all
+            ${isPlaying 
+                ? 'bg-amber-100 text-amber-700 ring-2 ring-amber-400 ring-offset-2' 
+                : 'bg-indigo-50 text-indigo-700 hover:bg-indigo-100'}
+          `}
         >
             {isLoadingAudio ? (
-                <span className="animate-pulse">Loading Audio...</span>
+                <span className="animate-pulse">Generating...</span>
             ) : isPlaying ? (
-                <span>Playing...</span>
+                <>
+                    <span className="animate-bounce">🔊</span> 
+                    <span>Listen</span>
+                </>
             ) : (
                 <>
-                    <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15.536 8.464a5 5 0 010 7.072m2.828-9.9a9 9 0 010 12.728M5.586 15H4a1 1 0 01-1-1v-4a1 1 0 011-1h1.586l4.707-4.707C10.923 3.663 12 4.109 12 5v14c0 .891-1.077 1.337-1.707.707L5.586 15z" /></svg>
-                    <span className="font-medium">Read Aloud</span>
+                    <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15.536 8.464a5 5 0 010 7.072m2.828-9.9a9 9 0 010 12.728M5.586 15H4a1 1 0 01-1-1v-4a1 1 0 011-1h1.586l4.707-4.707C10.923 3.663 12 4.109 12 5v14c0 .891-1.077 1.337-1.707.707L5.586 15z" /></svg>
+                    <span>Read Aloud</span>
                 </>
             )}
         </button>
       </div>
 
-      <div className="prose prose-slate max-w-none">
-        {renderContent()}
+      <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
+          {/* Text Content */}
+          <div className="lg:col-span-2 prose prose-slate prose-p:font-light max-w-none">
+            {renderContent()}
+          </div>
+
+          {/* Suggested Places Cards */}
+          <div className="lg:col-span-1 space-y-6">
+             <h3 className="text-lg font-bold text-indigo-900 border-l-4 border-amber-400 pl-3">
+                 Recommended Stops
+             </h3>
+             <div className="space-y-4">
+                {uniquePlaces.map((placeName, idx) => (
+                    <PlaceCard key={idx} query={placeName} onPlaceSelect={onPlaceUpdate} />
+                ))}
+                {uniquePlaces.length === 0 && (
+                    <p className="text-sm text-slate-400 italic">
+                        Places will appear here when mentioned in your itinerary.
+                    </p>
+                )}
+             </div>
+          </div>
       </div>
 
       {groundingChunks && groundingChunks.length > 0 && (
         <div className="mt-8 pt-6 border-t border-slate-100">
-          <h3 className="text-sm font-semibold text-slate-500 uppercase tracking-wide mb-4">Sources & Maps</h3>
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+          <h3 className="text-xs font-bold text-slate-400 uppercase tracking-widest mb-4">Sources</h3>
+          <div className="flex flex-wrap gap-2">
             {groundingChunks.map((chunk, i) => {
-               if (chunk.maps) {
-                   return (
-                       <a key={i} href={chunk.maps.uri} target="_blank" rel="noopener noreferrer" className="flex items-center p-3 bg-slate-50 hover:bg-indigo-50 rounded-lg border border-slate-200 transition-colors group">
-                           <div className="w-8 h-8 rounded-full bg-indigo-100 text-indigo-600 flex items-center justify-center flex-shrink-0 mr-3">
-                               <svg className="w-4 h-4" fill="currentColor" viewBox="0 0 20 20"><path fillRule="evenodd" d="M5.05 4.05a7 7 0 119.9 9.9L10 18.9l-4.95-4.95a7 7 0 010-9.9zM10 11a2 2 0 100-4 2 2 0 000 4z" clipRule="evenodd" /></svg>
-                           </div>
-                           <div className="overflow-hidden">
-                               <p className="font-medium text-slate-800 truncate group-hover:text-indigo-700">{chunk.maps.title}</p>
-                               <p className="text-xs text-slate-500">Google Maps</p>
-                           </div>
-                       </a>
-                   )
-               }
                if (chunk.web) {
                    return (
-                       <a key={i} href={chunk.web.uri} target="_blank" rel="noopener noreferrer" className="flex items-center p-3 bg-slate-50 hover:bg-emerald-50 rounded-lg border border-slate-200 transition-colors group">
-                            <div className="w-8 h-8 rounded-full bg-emerald-100 text-emerald-600 flex items-center justify-center flex-shrink-0 mr-3">
-                               <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 12a9 9 0 01-9 9m9-9a9 9 0 00-9-9m9 9H3m9 9a9 9 0 01-9-9m9 9c1.657 0 3-4.03 3-9s-1.343-9-3-9m0 18c-1.657 0-3-4.03-3-9s1.343-9 3-9m-9 9a9 9 0 019-9" /></svg>
-                            </div>
-                           <div className="overflow-hidden">
-                               <p className="font-medium text-slate-800 truncate group-hover:text-emerald-700">{chunk.web.title}</p>
-                               <p className="text-xs text-slate-500">Web Source</p>
-                           </div>
+                       <a key={i} href={chunk.web.uri} target="_blank" rel="noopener noreferrer" className="inline-flex items-center px-3 py-1 bg-slate-50 hover:bg-indigo-50 text-indigo-600 text-xs rounded-lg border border-slate-200 transition-colors truncate max-w-[200px]">
+                           <span className="mr-1">🔗</span>
+                           {chunk.web.title}
                        </a>
                    )
                }

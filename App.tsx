@@ -1,4 +1,5 @@
-import React, { useState, useEffect } from 'react';
+
+import React, { useState, useEffect, useRef } from 'react';
 import { AppMode, ItineraryResponse } from './types';
 import { generateGroundedItinerary, analyzeComplexLogistics } from './services/geminiService';
 import LiveSession from './components/LiveSession';
@@ -8,7 +9,6 @@ import ChatBot from './components/ChatBot';
 const CITIES = ["Bangkok", "Chiang Mai", "Phuket", "Krabi", "Ayutthaya"];
 
 export default function App() {
-  // Default to LIVE mode as requested
   const [mode, setMode] = useState<AppMode>(AppMode.LIVE);
   
   // Planner State
@@ -18,16 +18,24 @@ export default function App() {
   const [itinerary, setItinerary] = useState<ItineraryResponse | null>(null);
   const [useComplexThinking, setUseComplexThinking] = useState(false);
   
-  // Auto-generation state from Live
   const [liveTranscript, setLiveTranscript] = useState<string | null>(null);
-  
-  // Location
   const [userLocation, setUserLocation] = useState<GeolocationCoordinates | undefined>(undefined);
+  
+  // Map & Route State
+  const mapRef = useRef<any>(null); // Ref for the gmp-map element
+  const [mapInstance, setMapInstance] = useState<google.maps.Map | null>(null);
+  const [routeInfo, setRouteInfo] = useState<{ distance: string; duration: string; stops: number } | null>(null);
+  const directionsServiceRef = useRef<google.maps.DirectionsService | null>(null);
+  const directionsRendererRef = useRef<google.maps.DirectionsRenderer | null>(null);
 
-  // Helper for generating itinerary
   const generateItinerary = async (promptText: string) => {
       setLoading(true);
       setItinerary(null);
+      setRouteInfo(null);
+      if (directionsRendererRef.current) {
+          directionsRendererRef.current.setMap(null);
+      }
+
       try {
         if (useComplexThinking) {
             const extendedPrompt = `${promptText} Provide a deeply analyzed logistical plan considering traffic, weather patterns, and cultural timing. Explain your reasoning.`;
@@ -47,7 +55,6 @@ export default function App() {
   };
 
   const handleGenerate = async () => {
-      // Get location for grounding if available
       if (navigator.geolocation && !userLocation) {
          navigator.geolocation.getCurrentPosition(
              (pos) => setUserLocation(pos.coords), 
@@ -61,16 +68,99 @@ export default function App() {
       await generateItinerary(prompt);
   };
 
-  // Handle plan creation from Live Session
   const handlePlanFromLive = (transcript: string) => {
       setLiveTranscript(transcript);
       setMode(AppMode.PLANNER);
   };
 
-  // Effect to trigger generation when transcript arrives
+  // Handle Map Update from Itinerary Place Selection
+  const handlePlaceUpdate = (location: google.maps.LatLng) => {
+      if (mapInstance) {
+          mapInstance.panTo(location);
+          mapInstance.setZoom(14);
+      }
+  };
+
+  // Initialize Map Instance
+  useEffect(() => {
+      if (mode === AppMode.PLANNER && mapRef.current && !mapInstance) {
+         const checkMap = () => {
+             if (mapRef.current.innerMap) {
+                 setMapInstance(mapRef.current.innerMap);
+             } else {
+                 setTimeout(checkMap, 100);
+             }
+         };
+         checkMap();
+      }
+  }, [mode]);
+
+  // Plot Route when Itinerary Changes
+  useEffect(() => {
+      if (!itinerary || !itinerary.groundingChunks || !mapInstance) return;
+
+      const places = itinerary.groundingChunks
+          .filter(c => c.maps?.title)
+          .map(c => c.maps!.title);
+      
+      // Deduplicate nearby sequential items to avoid tiny hops? For now keep all unique.
+      const uniquePlaces = Array.from(new Set(places));
+
+      if (uniquePlaces.length < 2) return;
+
+      if (!directionsServiceRef.current) {
+          directionsServiceRef.current = new google.maps.DirectionsService();
+      }
+      if (!directionsRendererRef.current) {
+          directionsRendererRef.current = new google.maps.DirectionsRenderer({
+              map: mapInstance,
+              suppressMarkers: false, // Let Google draw A, B, C markers
+          });
+      } else {
+          directionsRendererRef.current.setMap(mapInstance);
+      }
+
+      const origin = uniquePlaces[0];
+      const destination = uniquePlaces[uniquePlaces.length - 1];
+      const waypoints = uniquePlaces.slice(1, -1).map(p => ({ location: p, stopover: true }));
+
+      directionsServiceRef.current.route({
+          origin: origin,
+          destination: destination,
+          waypoints: waypoints,
+          travelMode: google.maps.TravelMode.DRIVING, // Driving usually gives best tour connection logic
+      }, (result: any, status: any) => {
+          if (status === 'OK' && result) {
+              directionsRendererRef.current?.setDirections(result);
+              
+              // Calculate totals
+              let totalDist = 0;
+              let totalDur = 0;
+              const legs = result.routes[0].legs;
+              for (let i = 0; i < legs.length; i++) {
+                  totalDist += legs[i].distance?.value || 0;
+                  totalDur += legs[i].duration?.value || 0;
+              }
+
+              // Format
+              const distKm = (totalDist / 1000).toFixed(1);
+              const durHours = Math.floor(totalDur / 3600);
+              const durMins = Math.round((totalDur % 3600) / 60);
+              
+              setRouteInfo({
+                  distance: `${distKm} km`,
+                  duration: durHours > 0 ? `${durHours}h ${durMins}m` : `${durMins}m`,
+                  stops: uniquePlaces.length
+              });
+          } else {
+              console.warn("Directions request failed", status);
+          }
+      });
+
+  }, [itinerary, mapInstance]);
+
   useEffect(() => {
     if (liveTranscript && mode === AppMode.PLANNER) {
-        // Trigger auto-generation with a tailored prompt
         const prompt = `Based on the following conversation with a tour guide, extract the user's destination preference and interests, and create a detailed 1-day itinerary.
         
         CONVERSATION TRANSCRIPT:
@@ -79,141 +169,192 @@ export default function App() {
         If the destination is unclear, suggest a plan for Bangkok.`;
         
         generateItinerary(prompt);
-        // Clear transcript so it doesn't re-trigger
         setLiveTranscript(null);
     }
   }, [liveTranscript, mode]);
 
 
   return (
-    <div className="min-h-screen bg-slate-50 flex flex-col md:flex-row">
+    <div className="min-h-screen bg-[#F9F7F2] flex flex-col md:flex-row font-sans text-[#1e1e2e]">
       
-      {/* Sidebar Navigation */}
-      <nav className="w-full md:w-20 lg:w-64 bg-slate-900 text-slate-300 flex md:flex-col justify-between md:justify-start shrink-0 z-50 sticky top-0">
-        <div className="p-4 md:p-6 flex items-center gap-3 text-white font-bold text-xl tracking-tight">
-            <div className="w-8 h-8 bg-gradient-to-tr from-amber-400 to-amber-600 rounded-lg flex items-center justify-center shadow-lg shadow-amber-500/20">
-                <span className="text-lg">🇹🇭</span>
+      {/* Sidebar Navigation - Styled Thai Theme */}
+      <nav className="w-full md:w-24 lg:w-64 bg-indigo-900 text-indigo-100 flex md:flex-col justify-between md:justify-start shrink-0 z-50 sticky top-0 shadow-2xl">
+        <div className="p-4 md:p-6 flex items-center gap-3 text-white font-bold text-2xl tracking-tight border-b border-indigo-800/50">
+            <div className="w-10 h-10 bg-gradient-to-tr from-amber-400 to-yellow-600 rounded-full flex items-center justify-center shadow-lg shadow-amber-500/30 ring-2 ring-amber-200/20">
+                <span className="text-xl">🇹🇭</span>
             </div>
-            <span className="hidden lg:block">ThaiGuide</span>
+            <span className="hidden lg:block font-serif">ThaiGuide</span>
         </div>
 
-        <div className="flex md:flex-col w-full">
-            {/* 1. Live Guide */}
+        <div className="flex md:flex-col w-full pt-2">
             <button 
                 onClick={() => setMode(AppMode.LIVE)}
-                className={`flex-1 md:flex-none p-4 md:px-6 md:py-3 flex items-center gap-3 transition-all ${mode === AppMode.LIVE ? 'bg-slate-800 text-white border-l-4 border-rose-500' : 'hover:bg-slate-800/50'}`}
+                className={`flex-1 md:flex-none p-4 md:px-6 md:py-4 flex items-center gap-4 transition-all duration-300 ${mode === AppMode.LIVE ? 'bg-indigo-800/50 text-amber-400 border-l-4 border-amber-400' : 'hover:bg-indigo-800/30 text-indigo-300'}`}
             >
-                <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 11a7 7 0 01-7 7m0 0a7 7 0 01-7-7m7 7v4m0 0H8m4 0h4m-4-8a3 3 0 01-3-3V5a3 3 0 116 0v6a3 3 0 01-3 3z" /></svg>
+                <span className="text-2xl">🎙️</span>
                 <span className="hidden lg:block font-medium">Live Guide</span>
             </button>
 
-            {/* 2. Trip Planner */}
             <button 
                 onClick={() => setMode(AppMode.PLANNER)}
-                className={`flex-1 md:flex-none p-4 md:px-6 md:py-3 flex items-center gap-3 transition-all ${mode === AppMode.PLANNER ? 'bg-slate-800 text-white border-l-4 border-amber-500' : 'hover:bg-slate-800/50'}`}
+                className={`flex-1 md:flex-none p-4 md:px-6 md:py-4 flex items-center gap-4 transition-all duration-300 ${mode === AppMode.PLANNER ? 'bg-indigo-800/50 text-amber-400 border-l-4 border-amber-400' : 'hover:bg-indigo-800/30 text-indigo-300'}`}
             >
-                <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 20l-5.447-2.724A1 1 0 013 16.382V5.618a1 1 0 011.447-.894L9 7m0 13l6-3m-6 3V7m6 10l4.553 2.276A1 1 0 0121 18.382V7.618a1 1 0 01-.806-.984A3 3 0 0015 8m0 11V8" /></svg>
+                <span className="text-2xl">🗺️</span>
                 <span className="hidden lg:block font-medium">Trip Planner</span>
             </button>
             
-            {/* 3. Local Chat */}
             <button 
                 onClick={() => setMode(AppMode.CHAT)}
-                className={`flex-1 md:flex-none p-4 md:px-6 md:py-3 flex items-center gap-3 transition-all ${mode === AppMode.CHAT ? 'bg-slate-800 text-white border-l-4 border-indigo-500' : 'hover:bg-slate-800/50'}`}
+                className={`flex-1 md:flex-none p-4 md:px-6 md:py-4 flex items-center gap-4 transition-all duration-300 ${mode === AppMode.CHAT ? 'bg-indigo-800/50 text-amber-400 border-l-4 border-amber-400' : 'hover:bg-indigo-800/30 text-indigo-300'}`}
             >
-                <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 10h.01M12 10h.01M16 10h.01M9 16H5a2 2 0 01-2-2V6a2 2 0 012-2h14a2 2 0 012 2v8a2 2 0 01-2 2h-5l-5 5v-5z" /></svg>
+                <span className="text-2xl">💬</span>
                 <span className="hidden lg:block font-medium">Local Chat</span>
             </button>
+        </div>
+        
+        <div className="hidden md:block mt-auto p-6 opacity-50">
+             <img src="/flat-gabriel.svg" className="w-16 h-16 mx-auto mb-2 grayscale opacity-50" />
+             <p className="text-xs text-center font-light text-indigo-300">Powered by Gemini 2.5</p>
         </div>
       </nav>
 
       {/* Main Content */}
-      <main className="flex-1 p-4 md:p-8 overflow-y-auto h-[calc(100vh-80px)] md:h-screen">
+      <main className="flex-1 relative h-[calc(100vh-80px)] md:h-screen overflow-hidden">
         
         {mode === AppMode.PLANNER && (
-            <div className="max-w-4xl mx-auto space-y-8">
-                <header className="mb-8">
-                    <h1 className="text-3xl font-bold text-slate-900 mb-2">Create Your Day Plan</h1>
-                    <p className="text-slate-500">Generate a custom itinerary grounded in real Google Maps data.</p>
+            <div className="h-full flex flex-col">
+                {/* Header */}
+                <header className="p-8 pb-0">
+                    <h1 className="text-4xl font-bold text-indigo-950 mb-2">Create Your Journey</h1>
+                    <p className="text-slate-500 font-light">Discover Thailand with AI-powered personalized itineraries.</p>
                 </header>
 
-                <div className="bg-white p-6 rounded-xl shadow-sm border border-slate-200 grid grid-cols-1 md:grid-cols-2 gap-6">
-                    <div>
-                        <label className="block text-sm font-medium text-slate-700 mb-1">Destination</label>
-                        <select 
-                            value={destination} 
-                            onChange={(e) => setDestination(e.target.value)}
-                            className="w-full p-3 bg-slate-50 border border-slate-300 rounded-lg focus:ring-2 focus:ring-amber-500 focus:border-amber-500 outline-none"
-                        >
-                            {CITIES.map(c => <option key={c} value={c}>{c}</option>)}
-                        </select>
-                    </div>
-                    <div>
-                        <label className="block text-sm font-medium text-slate-700 mb-1">Interests (Optional)</label>
-                        <input 
-                            type="text"
-                            placeholder="e.g. Street food, Temples, Shopping"
-                            value={interests}
-                            onChange={(e) => setInterests(e.target.value)}
-                            className="w-full p-3 bg-slate-50 border border-slate-300 rounded-lg focus:ring-2 focus:ring-amber-500 focus:border-amber-500 outline-none"
-                        />
-                    </div>
-                    <div className="md:col-span-2 flex items-center justify-between bg-slate-50 p-4 rounded-lg border border-slate-200">
-                        <div className="flex items-center gap-3">
-                            <div className={`w-10 h-6 rounded-full p-1 cursor-pointer transition-colors ${useComplexThinking ? 'bg-indigo-600' : 'bg-slate-300'}`} onClick={() => setUseComplexThinking(!useComplexThinking)}>
-                                <div className={`w-4 h-4 bg-white rounded-full shadow-sm transform transition-transform ${useComplexThinking ? 'translate-x-4' : ''}`}></div>
+                {/* Split View: Inputs/Result & Map */}
+                <div className="flex-1 flex flex-col lg:flex-row overflow-hidden p-4 md:p-8 gap-6">
+                    
+                    {/* Left Column: Controls & Text Results */}
+                    <div className="flex-1 flex flex-col gap-6 overflow-y-auto pr-2 lg:max-w-2xl">
+                        <div className="bg-white p-6 rounded-3xl shadow-sm border border-slate-100 grid grid-cols-1 md:grid-cols-2 gap-4 transition-all hover:shadow-md">
+                            <div>
+                                <label className="block text-xs font-bold text-slate-400 uppercase tracking-wider mb-2">Destination</label>
+                                <div className="relative">
+                                    <select 
+                                        value={destination} 
+                                        onChange={(e) => setDestination(e.target.value)}
+                                        className="w-full p-3 bg-slate-50 border border-slate-200 rounded-xl focus:ring-2 focus:ring-amber-400 focus:border-amber-400 outline-none appearance-none text-lg font-medium text-indigo-900"
+                                    >
+                                        {CITIES.map(c => <option key={c} value={c}>{c}</option>)}
+                                    </select>
+                                    <div className="absolute right-4 top-1/2 -translate-y-1/2 text-slate-400 pointer-events-none">▼</div>
+                                </div>
                             </div>
                             <div>
-                                <span className="block text-sm font-semibold text-slate-800">Advanced Thinking Mode</span>
-                                <span className="text-xs text-slate-500">Uses Gemini 3 Pro reasoning (slower but smarter)</span>
+                                <label className="block text-xs font-bold text-slate-400 uppercase tracking-wider mb-2">Interests</label>
+                                <input 
+                                    type="text"
+                                    placeholder="e.g. Spicy food, Old temples"
+                                    value={interests}
+                                    onChange={(e) => setInterests(e.target.value)}
+                                    className="w-full p-3 bg-slate-50 border border-slate-200 rounded-xl focus:ring-2 focus:ring-amber-400 focus:border-amber-400 outline-none text-lg"
+                                />
+                            </div>
+                            
+                            <div className="md:col-span-2 pt-2 flex items-center gap-4">
+                                <button 
+                                    onClick={handleGenerate}
+                                    disabled={loading}
+                                    className="flex-1 py-4 bg-gradient-to-r from-amber-500 to-orange-600 hover:from-amber-600 hover:to-orange-700 text-white font-bold rounded-xl shadow-lg shadow-amber-500/30 transition-all flex items-center justify-center gap-2 disabled:opacity-70 disabled:cursor-wait transform hover:scale-[1.01] active:scale-[0.99]"
+                                >
+                                    {loading ? (
+                                        <>
+                                            <svg className="animate-spin h-5 w-5 text-white" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                                                <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
+                                                <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                                            </svg>
+                                            <span>Somsri is Thinking...</span>
+                                        </>
+                                    ) : (
+                                        <>
+                                            <span className="text-xl">✨</span>
+                                            <span>Generate Plan</span>
+                                        </>
+                                    )}
+                                </button>
+                                
+                                <button 
+                                    onClick={() => setUseComplexThinking(!useComplexThinking)}
+                                    className={`p-4 rounded-xl border transition-all ${useComplexThinking ? 'bg-indigo-50 border-indigo-200 text-indigo-700' : 'bg-white border-slate-200 text-slate-400 hover:bg-slate-50'}`}
+                                    title="Enable Deep Thinking Mode"
+                                >
+                                    🧠
+                                </button>
                             </div>
                         </div>
-                        <button 
-                            onClick={handleGenerate}
-                            disabled={loading}
-                            className="px-6 py-3 bg-amber-500 hover:bg-amber-600 text-white font-bold rounded-lg shadow-lg shadow-amber-500/30 transition-all flex items-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed"
-                        >
-                            {loading ? (
-                                <>
-                                    <svg className="animate-spin h-5 w-5 text-white" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
-                                        <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
-                                        <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
-                                    </svg>
-                                    <span>Generating...</span>
-                                </>
-                            ) : (
-                                <span>Generate Plan</span>
-                            )}
-                        </button>
+
+                        {itinerary && (
+                            <div className="animate-slide-up pb-10">
+                                <ItineraryResult 
+                                    content={itinerary.text} 
+                                    groundingChunks={itinerary.groundingChunks} 
+                                    onPlaceUpdate={handlePlaceUpdate}
+                                />
+                            </div>
+                        )}
+                    </div>
+
+                    {/* Right Column: Map View */}
+                    <div className="hidden lg:block flex-1 bg-white rounded-3xl shadow-inner border border-slate-200 overflow-hidden relative group">
+                        <gmp-map ref={mapRef} center="13.7563, 100.5018" zoom="12" map-id="DEMO_MAP_ID"></gmp-map>
+                        
+                        {/* Route Info Card */}
+                        {routeInfo && (
+                            <div className="absolute top-6 left-6 right-6 bg-white/95 backdrop-blur-xl p-4 rounded-2xl shadow-2xl border border-indigo-100 animate-fade-in z-10 flex justify-between items-center">
+                                <div className="flex gap-6">
+                                    <div>
+                                        <div className="text-xs text-slate-400 font-bold uppercase tracking-wider mb-1">Distance</div>
+                                        <div className="text-xl font-bold text-indigo-900">{routeInfo.distance}</div>
+                                    </div>
+                                    <div className="w-px bg-slate-200"></div>
+                                    <div>
+                                        <div className="text-xs text-slate-400 font-bold uppercase tracking-wider mb-1">Duration</div>
+                                        <div className="text-xl font-bold text-indigo-900">{routeInfo.duration}</div>
+                                    </div>
+                                    <div className="w-px bg-slate-200"></div>
+                                    <div>
+                                        <div className="text-xs text-slate-400 font-bold uppercase tracking-wider mb-1">Stops</div>
+                                        <div className="text-xl font-bold text-indigo-900">{routeInfo.stops}</div>
+                                    </div>
+                                </div>
+                                <div className="text-amber-500 bg-amber-50 p-2 rounded-lg">
+                                    🚗
+                                </div>
+                            </div>
+                        )}
+
+                        <div className="absolute bottom-6 left-6 right-6 bg-white/90 backdrop-blur-md p-4 rounded-2xl shadow-lg border border-slate-100 transition-all opacity-100 group-hover:opacity-0 pointer-events-none">
+                            <p className="text-xs text-slate-500 font-medium uppercase tracking-wider mb-1">Map View</p>
+                            <p className="text-indigo-900 font-semibold">Explore suggested locations</p>
+                        </div>
                     </div>
                 </div>
-
-                {itinerary && (
-                    <div className="animate-fade-in-up">
-                        <ItineraryResult 
-                            content={itinerary.text} 
-                            groundingChunks={itinerary.groundingChunks} 
-                        />
-                    </div>
-                )}
             </div>
         )}
 
         {mode === AppMode.CHAT && (
-            <div className="max-w-3xl mx-auto h-full flex flex-col justify-center">
+            <div className="max-w-3xl mx-auto h-full flex flex-col justify-center p-4 md:p-8">
                  <header className="mb-6 text-center">
-                    <h1 className="text-2xl font-bold text-slate-900">Ask the Local Expert</h1>
-                    <p className="text-slate-500">Somsri knows everything about etiquette, bargaining, and hidden gems.</p>
+                    <h1 className="text-3xl font-bold text-indigo-900">Ask Somsri</h1>
+                    <p className="text-slate-500 mt-2">Your personal cultural expert for etiquette, bargaining, and hidden gems.</p>
                 </header>
                 <ChatBot />
             </div>
         )}
 
         {mode === AppMode.LIVE && (
-            <div className="max-w-md mx-auto h-full flex flex-col justify-center">
+            <div className="max-w-md mx-auto h-full flex flex-col justify-center p-4">
                 <header className="mb-8 text-center">
-                    <h1 className="text-3xl font-bold text-slate-900 mb-2">Live Voice Guide</h1>
-                    <p className="text-slate-500">Have a real-time voice conversation with Somsri.</p>
+                    <h1 className="text-3xl font-bold text-indigo-900 mb-2">Live Voice Guide</h1>
+                    <p className="text-slate-500">Real-time conversation with your AI companion.</p>
                 </header>
                 <LiveSession 
                     onClose={() => setMode(AppMode.PLANNER)} 

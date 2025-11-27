@@ -5,10 +5,12 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>ThaiGuide AI</title>
     <script src="https://cdn.tailwindcss.com"></script>
-    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Kanit:wght@300;400;500;600;700&family=Inter:wght@300;400;500;600&display=swap" rel="stylesheet">
     <style>
       body {
-        font-family: 'Inter', sans-serif;
+        font-family: 'Kanit', sans-serif; /* Thai font primary */
       }
       /* Custom scrollbar for webkit */
       ::-webkit-scrollbar {
@@ -19,13 +21,47 @@
         background: #f1f1f1; 
       }
       ::-webkit-scrollbar-thumb {
-        background: #cbd5e1; 
+        background: #D4AF37; /* Gold thumb */
         border-radius: 4px;
       }
       ::-webkit-scrollbar-thumb:hover {
-        background: #94a3b8; 
+        background: #B5952F; 
+      }
+
+      /* Thai-themed Places UI Kit Styling */
+      gmp-place-details, gmp-place-details-compact {
+        --gmp-font-family: 'Kanit', sans-serif;
+        --gmp-color-surface: #ffffff;
+        --gmp-color-on-surface: #1e1e2e; /* Deep indigo text */
+        --gmp-color-primary: #7C3AED; /* Royal Purple */
+        --gmp-color-on-primary: #ffffff;
+        --gmp-color-secondary: #D4AF37; /* Gold */
+        --gmp-icon-color: #D4AF37;
+        --gmp-rating-color: #F59E0B; /* Amber */
+        border-radius: 16px;
+        box-shadow: 0 4px 20px rgba(124, 58, 237, 0.15);
+        border: 1px solid rgba(212, 175, 55, 0.3); /* Subtle gold border */
+      }
+
+      /* Map styling */
+      gmp-map {
+        height: 100%;
+        width: 100%;
+        border-radius: 16px;
+        overflow: hidden;
+        box-shadow: 0 10px 30px -10px rgba(0,0,0,0.3);
+      }
+      
+      .thai-gradient-text {
+        background: linear-gradient(135deg, #D4AF37 0%, #B45309 100%);
+        -webkit-background-clip: text;
+        -webkit-text-fill-color: transparent;
       }
     </style>
+    <script>
+      (g=>{var h,a,k,p="The Google Maps JavaScript API",c="google",l="importLibrary",q="__ib__",m=document,b=window;b=b[c]||(b[c]={});var d=b.maps||(b.maps={}),r=new Set,e=new URLSearchParams,u=()=>h||(h=new Promise(async(f,n)=>{await (a=m.createElement("script"));e.set("libraries",[...r]+"");for(k in g)e.set(k.replace(/[A-Z]/g,t=>"_"+t[0].toLowerCase()),g[k]);e.set("callback",c+".maps."+q);a.src=`https://maps.${c}apis.com/maps/api/js?`+e;d[q]=f;a.onerror=()=>h=n(Error(p+" could not load."));a.nonce=m.querySelector("script[nonce]")?.nonce||"";m.head.append(a)}));d[l]?console.warn(p+" only loads once. Ignoring:",g):d[l]=(f,...n)=>r.add(f)&&u().then(()=>d[l](f,...n))})
+      ({key: process.env.API_KEY, v: "weekly", libraries: "places,marker"});
+    </script>
   <script type="importmap">
 {
   "imports": {
