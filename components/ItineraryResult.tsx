@@ -8,11 +8,13 @@ interface ItineraryResultProps {
   content: string;
   groundingChunks?: GroundingChunk[];
   onPlaceUpdate?: (location: google.maps.LatLng) => void;
+  onSave?: () => void;
 }
 
-const ItineraryResult: React.FC<ItineraryResultProps> = ({ content, groundingChunks, onPlaceUpdate }) => {
+const ItineraryResult: React.FC<ItineraryResultProps> = ({ content, groundingChunks, onPlaceUpdate, onSave }) => {
   const [isPlaying, setIsPlaying] = useState(false);
   const [isLoadingAudio, setIsLoadingAudio] = useState(false);
+  const [isSaved, setIsSaved] = useState(false);
   const audioContextRef = useRef<AudioContext | null>(null);
 
   // Extract potential place names from grounding chunks for the widget
@@ -79,6 +81,14 @@ const ItineraryResult: React.FC<ItineraryResultProps> = ({ content, groundingChu
     }
   };
 
+  const handleSaveClick = () => {
+      if (onSave) {
+          onSave();
+          setIsSaved(true);
+          setTimeout(() => setIsSaved(false), 2000);
+      }
+  };
+
   return (
     <div className="bg-white/90 backdrop-blur-sm rounded-3xl shadow-2xl border border-amber-100/50 p-8 relative overflow-hidden">
       {/* Decorative Thai Pattern Background Effect */}
@@ -92,30 +102,56 @@ const ItineraryResult: React.FC<ItineraryResultProps> = ({ content, groundingChu
             <p className="text-amber-600 text-sm font-medium uppercase tracking-wider">Curated by Somsri</p>
         </div>
         
-        <button
-          onClick={handleReadAloud}
-          disabled={isLoadingAudio || isPlaying}
-          className={`
-            flex items-center gap-2 px-4 py-2 rounded-full text-sm font-medium transition-all
-            ${isPlaying 
-                ? 'bg-amber-100 text-amber-700 ring-2 ring-amber-400 ring-offset-2' 
-                : 'bg-indigo-50 text-indigo-700 hover:bg-indigo-100'}
-          `}
-        >
-            {isLoadingAudio ? (
-                <span className="animate-pulse">Generating...</span>
-            ) : isPlaying ? (
-                <>
-                    <span className="animate-bounce">🔊</span> 
-                    <span>Listen</span>
-                </>
-            ) : (
-                <>
-                    <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15.536 8.464a5 5 0 010 7.072m2.828-9.9a9 9 0 010 12.728M5.586 15H4a1 1 0 01-1-1v-4a1 1 0 011-1h1.586l4.707-4.707C10.923 3.663 12 4.109 12 5v14c0 .891-1.077 1.337-1.707.707L5.586 15z" /></svg>
-                    <span>Read Aloud</span>
-                </>
+        <div className="flex gap-2">
+            {onSave && (
+                <button
+                    onClick={handleSaveClick}
+                    className={`
+                        flex items-center gap-2 px-4 py-2 rounded-full text-sm font-medium transition-all border
+                        ${isSaved 
+                            ? 'bg-green-100 text-green-700 border-green-200' 
+                            : 'bg-white text-slate-600 border-slate-200 hover:bg-slate-50 hover:text-indigo-600'}
+                    `}
+                >
+                    {isSaved ? (
+                        <>
+                            <span>✓</span>
+                            <span>Saved</span>
+                        </>
+                    ) : (
+                        <>
+                            <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 7H5a2 2 0 00-2 2v9a2 2 0 002 2h14a2 2 0 002-2V9a2 2 0 00-2-2h-3m-1 4l-3 3m0 0l-3-3m3 3V4" /></svg>
+                            <span>Save</span>
+                        </>
+                    )}
+                </button>
             )}
-        </button>
+
+            <button
+            onClick={handleReadAloud}
+            disabled={isLoadingAudio || isPlaying}
+            className={`
+                flex items-center gap-2 px-4 py-2 rounded-full text-sm font-medium transition-all
+                ${isPlaying 
+                    ? 'bg-amber-100 text-amber-700 ring-2 ring-amber-400 ring-offset-2' 
+                    : 'bg-indigo-50 text-indigo-700 hover:bg-indigo-100'}
+            `}
+            >
+                {isLoadingAudio ? (
+                    <span className="animate-pulse">Generating...</span>
+                ) : isPlaying ? (
+                    <>
+                        <span className="animate-bounce">🔊</span> 
+                        <span>Listen</span>
+                    </>
+                ) : (
+                    <>
+                        <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15.536 8.464a5 5 0 010 7.072m2.828-9.9a9 9 0 010 12.728M5.586 15H4a1 1 0 01-1-1v-4a1 1 0 011-1h1.586l4.707-4.707C10.923 3.663 12 4.109 12 5v14c0 .891-1.077 1.337-1.707.707L5.586 15z" /></svg>
+                        <span>Read Aloud</span>
+                    </>
+                )}
+            </button>
+        </div>
       </div>
 
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">

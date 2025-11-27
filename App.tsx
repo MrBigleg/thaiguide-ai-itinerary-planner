@@ -73,6 +73,29 @@ export default function App() {
       setMode(AppMode.PLANNER);
   };
 
+  const handleSaveItinerary = () => {
+      if (!itinerary) return;
+      
+      try {
+          const savedItem = {
+              id: Date.now(),
+              destination,
+              interests,
+              text: itinerary.text,
+              groundingChunks: itinerary.groundingChunks,
+              created: new Date().toISOString()
+          };
+          
+          const existingData = localStorage.getItem('thai_guide_saved_trips');
+          const history = existingData ? JSON.parse(existingData) : [];
+          history.unshift(savedItem);
+          
+          localStorage.setItem('thai_guide_saved_trips', JSON.stringify(history.slice(0, 10))); // Keep last 10
+      } catch (e) {
+          console.error("Failed to save to local storage", e);
+      }
+  };
+
   // Handle Map Update from Itinerary Place Selection
   const handlePlaceUpdate = (location: google.maps.LatLng) => {
       if (mapInstance) {
@@ -81,19 +104,23 @@ export default function App() {
       }
   };
 
-  // Initialize Map Instance
+  // Initialize Map Instance with robust cleanup
   useEffect(() => {
-      if (mode === AppMode.PLANNER && mapRef.current && !mapInstance) {
+      let timeoutId: number;
+      if (mode === AppMode.PLANNER && !mapInstance) {
          const checkMap = () => {
-             if (mapRef.current.innerMap) {
+             if (mapRef.current && mapRef.current.innerMap) {
                  setMapInstance(mapRef.current.innerMap);
-             } else {
-                 setTimeout(checkMap, 100);
+             } else if (mapRef.current) {
+                 timeoutId = window.setTimeout(checkMap, 100);
              }
          };
          checkMap();
       }
-  }, [mode]);
+      return () => {
+        if (timeoutId) window.clearTimeout(timeoutId);
+      };
+  }, [mode, mapInstance]);
 
   // Plot Route when Itinerary Changes
   useEffect(() => {
@@ -297,6 +324,7 @@ export default function App() {
                                     content={itinerary.text} 
                                     groundingChunks={itinerary.groundingChunks} 
                                     onPlaceUpdate={handlePlaceUpdate}
+                                    onSave={handleSaveItinerary}
                                 />
                             </div>
                         )}

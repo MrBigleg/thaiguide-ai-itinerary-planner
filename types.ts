@@ -45,15 +45,18 @@ declare global {
   // Define google namespace for types (e.g. google.maps.LatLng)
   namespace google {
     namespace maps {
+      function importLibrary(library: string): Promise<any>;
+
       class Map {
         constructor(mapDiv: Element | null, opts?: any);
         panTo(latLng: any): void;
         setZoom(zoom: number): void;
+        innerMap?: google.maps.Map;
       }
       class LatLng {
         constructor(lat: number, lng: number);
       }
-      class PlacesLibrary {}
+      
       namespace places {
         class PlacesService {
             constructor(attr: any);
@@ -63,6 +66,12 @@ declare global {
             OK = 'OK'
         }
       }
+
+      // Update PlacesLibrary to be an interface matching the imported module
+      interface PlacesLibrary {
+        PlacesService: typeof google.maps.places.PlacesService;
+      }
+
       class DirectionsService {
         route(request: any, callback: (result: any, status: any) => void): void;
       }
@@ -83,34 +92,20 @@ declare global {
     }
   }
 
-  // Define google var for runtime access
-  var google: any;
-
   interface Window {
     google: any;
   }
 
   namespace JSX {
     interface IntrinsicElements {
-      'gmp-map': React.DetailedHTMLProps<React.HTMLAttributes<HTMLElement>, HTMLElement> & {
-        center?: string;
-        zoom?: string;
-        'map-id'?: string;
-      };
-      'gmp-advanced-marker': React.DetailedHTMLProps<React.HTMLAttributes<HTMLElement>, HTMLElement> & {
-        position?: string;
-        title?: string;
-      };
-      'gmp-place-details': React.DetailedHTMLProps<React.HTMLAttributes<HTMLElement>, HTMLElement>;
+      'gmp-map': React.DetailedHTMLProps<React.HTMLAttributes<HTMLElement>, HTMLElement> & { "center"?: string; "zoom"?: string; "map-id"?: string };
+      'gmp-advanced-marker': React.DetailedHTMLProps<React.HTMLAttributes<HTMLElement>, HTMLElement>;
+      'gmp-place-details': React.DetailedHTMLProps<React.HTMLAttributes<HTMLElement>, HTMLElement> & { "place-id"?: string };
       'gmp-place-details-compact': React.DetailedHTMLProps<React.HTMLAttributes<HTMLElement>, HTMLElement>;
-      'gmp-place-details-place-request': React.DetailedHTMLProps<React.HTMLAttributes<HTMLElement>, HTMLElement> & {
-        place?: string; // Place ID or resource name
-      };
+      'gmp-place-details-place-request': React.DetailedHTMLProps<React.HTMLAttributes<HTMLElement>, HTMLElement> & { "place"?: string };
       'gmp-place-all-content': React.DetailedHTMLProps<React.HTMLAttributes<HTMLElement>, HTMLElement>;
       'gmp-place-content-config': React.DetailedHTMLProps<React.HTMLAttributes<HTMLElement>, HTMLElement>;
-      'gmp-place-media': React.DetailedHTMLProps<React.HTMLAttributes<HTMLElement>, HTMLElement> & {
-        'lightbox-preferred'?: boolean;
-      };
+      'gmp-place-media': React.DetailedHTMLProps<React.HTMLAttributes<HTMLElement>, HTMLElement> & { "lightbox-preferred"?: boolean };
       'gmp-place-rating': React.DetailedHTMLProps<React.HTMLAttributes<HTMLElement>, HTMLElement>;
       'gmp-place-type': React.DetailedHTMLProps<React.HTMLAttributes<HTMLElement>, HTMLElement>;
       'gmp-place-price': React.DetailedHTMLProps<React.HTMLAttributes<HTMLElement>, HTMLElement>;

@@ -35,8 +35,6 @@ const LiveSession: React.FC<LiveSessionProps> = ({ onClose, onCreatePlan }) => {
   const currentInputTransRef = useRef<string>("");
   const currentOutputTransRef = useRef<string>("");
 
-  const requestRef = useRef<number>(0);
-
   const cleanup = useCallback(() => {
     mountedRef.current = false;
     if (sourcesRef.current) {
@@ -51,12 +49,10 @@ const LiveSession: React.FC<LiveSessionProps> = ({ onClose, onCreatePlan }) => {
     if (sessionPromiseRef.current) {
         sessionPromiseRef.current.then(session => session.close()).catch(() => {});
     }
-    if (requestRef.current) {
-        cancelAnimationFrame(requestRef.current);
-    }
   }, []);
 
   useEffect(() => {
+      mountedRef.current = true;
       return cleanup;
   }, [cleanup]);
 
@@ -64,6 +60,7 @@ const LiveSession: React.FC<LiveSessionProps> = ({ onClose, onCreatePlan }) => {
     setStatus('connecting');
     try {
       const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      if (!mountedRef.current) return;
       streamRef.current = stream;
 
       inputContextRef.current = new (window.AudioContext || (window as any).webkitAudioContext)({ sampleRate: 16000 });
@@ -108,6 +105,8 @@ const LiveSession: React.FC<LiveSessionProps> = ({ onClose, onCreatePlan }) => {
                     data: base64Data
                   }
                 });
+              }).catch(err => {
+                  console.error("Session send error:", err);
               });
             };
           },
@@ -142,11 +141,14 @@ const LiveSession: React.FC<LiveSessionProps> = ({ onClose, onCreatePlan }) => {
                  1
                );
                
+               if (!mountedRef.current) return;
+
                const source = ctx.createBufferSource();
                source.buffer = audioBuffer;
                source.connect(outputNode);
                
                source.onended = () => {
+                 if (!mountedRef.current) return;
                  if (sourcesRef.current) {
                      sourcesRef.current.delete(source);
                      if (sourcesRef.current.size === 0) {
@@ -168,7 +170,7 @@ const LiveSession: React.FC<LiveSessionProps> = ({ onClose, onCreatePlan }) => {
                    });
                    sourcesRef.current.clear();
                }
-               setIsAgentSpeaking(false);
+               if (mountedRef.current) setIsAgentSpeaking(false);
                nextStartTimeRef.current = 0;
              }
           },
@@ -203,7 +205,7 @@ const LiveSession: React.FC<LiveSessionProps> = ({ onClose, onCreatePlan }) => {
 
     } catch (err) {
       console.error("Failed to initialize live session", err);
-      setStatus('error');
+      if (mountedRef.current) setStatus('error');
     }
   };
 
@@ -227,7 +229,7 @@ const LiveSession: React.FC<LiveSessionProps> = ({ onClose, onCreatePlan }) => {
          
          // Short delay to admire the served dish before routing
          setTimeout(() => {
-             onCreatePlan(finalTranscript);
+             if (mountedRef.current) onCreatePlan(finalTranscript);
          }, 1500);
      }, 2500);
   };
@@ -428,4 +430,3 @@ const LiveSession: React.FC<LiveSessionProps> = ({ onClose, onCreatePlan }) => {
 };
 
 export default LiveSession;
-    
